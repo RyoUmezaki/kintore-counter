@@ -146,6 +146,14 @@ input:focus-visible,button:focus-visible{outline:3px solid var(--gold);outline-o
 .bar .c{text-align:right;font-family:var(--f-label);font-variant-numeric:tabular-nums}
 
 .foot{display:flex;flex-direction:column;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--mute)}
+.note{margin:0;font-size:13px;color:var(--mute)}
+.bk-alert{margin:0;padding:10px 12px;background:var(--gold);color:var(--iron);font-weight:900;font-size:13px}
+.bk-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.bk-btn{appearance:none;cursor:pointer;border:2px solid var(--gold);background:var(--gold);color:var(--iron);font:900 15px var(--f-body);padding:10px 22px;min-height:44px}
+.bk-btn.ghost{background:transparent;color:var(--gold)}
+.bk-last{font-size:12px;color:var(--mute)}
+#bkText{width:100%;background:var(--iron);color:var(--chalk);border:2px solid var(--line);padding:10px 12px;font:12px/1.5 ui-monospace,Menlo,monospace;border-radius:0;resize:vertical}
+#bkText:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
 .empty{margin:0;padding:12px 14px;border:2px dashed var(--gold-dim);color:var(--chalk);font-weight:700;font-size:14px}
 .linkbtn{appearance:none;background:none;border:0;color:var(--gold);text-decoration:underline;cursor:pointer;font:inherit;padding:0}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--gold);color:var(--iron);
@@ -253,12 +261,21 @@ input:focus-visible,button:focus-visible{outline:3px solid var(--gold);outline-o
     <div class="bars" id="mBars"></div>
   </section>
 
-  <div class="foot">
-    <span>記録はこのスマホの中だけに保存されます。機種変更やブラウザのデータ削除に備えて、ときどきバックアップしてください。</span>
-    <span><button class="linkbtn" id="exportBtn" type="button">バックアップを保存</button> ／ <button class="linkbtn" id="importBtn" type="button">バックアップを読み込む</button></span>
-    <input type="file" id="importFile" accept="application/json,.json" hidden>
+  <section class="card" id="backup" aria-labelledby="bkH">
+    <div class="sec-h"><h2 id="bkH">BACK <span>UP</span></h2><span class="jp">バックアップ・復元</span></div>
+    <p class="note">記録はこのスマホの中だけに保存されます。ブラウザの「Cookieとサイトデータ」を削除すると記録も消えるので、ときどきコピーしてメモアプリやLINEのKeepに貼っておいてください。</p>
+    <p class="bk-alert" id="bkAlert" hidden></p>
+    <div class="bk-row">
+      <button class="bk-btn" id="copyBtn" type="button">コピー</button>
+      <span class="bk-last" id="bkLast"></span>
+    </div>
+    <textarea id="bkText" rows="4" placeholder="ここにバックアップの文字を貼り付けて「復元」を押す" spellcheck="false" autocomplete="off"></textarea>
+    <div class="bk-row">
+      <button class="bk-btn ghost" id="restoreBtn" type="button">復元</button>
+      <span class="bk-last">今の記録は残したまま、足りない分だけ追加します</span>
+    </div>
     <p class="err" id="backupErr" aria-live="polite"></p>
-  </div>
+  </section>
 </div>
 <div class="toast" id="toast" hidden>RECORDED</div>
 
@@ -275,11 +292,16 @@ const DOW=['SUN','MON','TUE','WED','THU','FRI','SAT'];
 
 // ---- storage: このスマホのブラウザ内に保存
 function loadLocal(){try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&Array.isArray(s.entries))return s.entries}catch(e){}return []}
-function saveLocal(){try{localStorage.setItem(KEY,JSON.stringify({entries:state.entries}))}catch(e){}}
+function saveLocal(){try{localStorage.setItem(KEY,JSON.stringify({entries:state.entries}))}catch(e){};idbPut(state.entries)}
+// 予備の保存先（IndexedDB）。片方だけ消えたときに自動で戻す
+function idb(){return new Promise((ok,ng)=>{try{const r=indexedDB.open('kintore-counter',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>ok(r.result);r.onerror=()=>ng(r.error)}catch(e){ng(e)}})}
+function idbPut(v){idb().then(db=>{const t=db.transaction('kv','readwrite');t.objectStore('kv').put(v,'entries')}).catch(()=>{})}
+function idbGet(){return idb().then(db=>new Promise(ok=>{const r=db.transaction('kv').objectStore('kv').get('entries');r.onsuccess=()=>ok(r.result||[]);r.onerror=()=>ok([])})).catch(()=>[])}
 let state={entries:loadLocal()};
 async function addEntry(e){state.entries.push(e);saveLocal();render();}
 async function deleteDate(k){state.entries=state.entries.filter(x=>x.date!==k);saveLocal();render();}
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
+function mergeIn(list){const have=new Set(state.entries.map(e=>e.id));let n=0;list.forEach(e=>{if(e&&e.id&&e.date&&!have.has(e.id)){state.entries.push(e);have.add(e.id);n++}});return n}
 
 // ---- form
 const $=id=>document.getElementById(id);
@@ -315,6 +337,7 @@ function weekCount(map,mon){let n=0,c=0;for(let i=0;i<7;i++){const k=iso(addDays
 function render(){
   const map=byDate();
   $('empty').hidden=state.entries.length>0;
+  if(typeof renderBackup==='function')renderBackup();
   // stats
   const thisMon=monday(TODAY);
   const wk=weekCount(map,thisMon).n;
@@ -406,29 +429,41 @@ document.querySelector('.tabs').addEventListener('click',e=>{const b=e.target.cl
 
 render();
 
-// ---- backup
+// ---- backup（水分ログと同じ「コピー／貼り付けて復元」方式）
+var BK_KEY=KEY+'.lastBackup';
 function flash(msg){const t=$('toast');t.textContent=msg;t.hidden=false;clearTimeout(t._t);t._t=setTimeout(()=>{t.hidden=true;t.textContent='RECORDED'},1800);}
-$('exportBtn').onclick=async()=>{
-  const name=`kintore-backup-${iso(TODAY)}.json`;
-  const blob=new Blob([JSON.stringify({app:'kintore-counter',v:1,entries:state.entries},null,1)],{type:'application/json'});
-  const file=new File([blob],name,{type:'application/json'});
-  try{if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:name});return}}catch(e){if(e&&e.name==='AbortError')return}
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();
-  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);
+function lastBackup(){try{return localStorage.getItem(BK_KEY)}catch(e){return null}}
+function renderBackup(){
+  const lb=lastBackup();
+  const days=lb?Math.floor((TODAY-parse(lb))/864e5):null;
+  $('bkLast').textContent=lb?`前回のコピー：${lb.replace(/-/g,'/')}（${days===0?'今日':days+'日前'}）`:'まだコピーしていません';
+  const need=state.entries.length>0&&(days===null||days>=7);
+  $('bkAlert').hidden=!need;
+  $('bkAlert').textContent=days===null?'まだバックアップがありません。「コピー」を押してメモに貼っておきましょう。':`前回のバックアップから${days}日たちました。「コピー」を押して控えを更新しましょう。`;
+}
+$('copyBtn').onclick=async()=>{
+  $('backupErr').textContent='';
+  const text=JSON.stringify({app:'kintore-counter',v:1,savedAt:iso(TODAY),entries:state.entries});
+  let ok=false;
+  try{await navigator.clipboard.writeText(text);ok=true}catch(e){}
+  if(!ok){$('bkText').value=text;$('bkText').focus();$('bkText').select();try{ok=document.execCommand('copy')}catch(e){}}
+  if(ok){try{localStorage.setItem(BK_KEY,iso(TODAY))}catch(e){};flash('COPIED');renderBackup();}
+  else{$('backupErr').textContent='自動でコピーできませんでした。下の欄の文字を長押しして「すべて選択」→「コピー」してください。';}
 };
-$('importBtn').onclick=()=>$('importFile').click();
-$('importFile').onchange=async ev=>{
-  const f=ev.target.files[0];if(!f)return;
+$('restoreBtn').onclick=()=>{
+  $('backupErr').textContent='';
+  const raw=$('bkText').value.trim();
+  if(!raw){$('backupErr').textContent='上の欄にバックアップの文字を貼り付けてから「復元」を押してください。';return}
   try{
-    const data=JSON.parse(await f.text());
+    const data=JSON.parse(raw.slice(raw.indexOf('{'),raw.lastIndexOf('}')+1));
     const list=Array.isArray(data)?data:data.entries;
     if(!Array.isArray(list))throw 0;
-    const have=new Set(state.entries.map(e=>e.id));let n=0;
-    list.forEach(e=>{if(e&&e.id&&e.date&&!have.has(e.id)){state.entries.push(e);n++}});
-    saveLocal();render();flash(n+'件 読み込み');
-  }catch(e){$('backupErr').textContent='このファイルは読み込めませんでした。「バックアップを保存」で作ったファイルを選んでください。'}
-  ev.target.value='';
+    const n=mergeIn(list);saveLocal();render();$('bkText').value='';flash(n+'件 復元');
+  }catch(e){$('backupErr').textContent='この文字は読み込めませんでした。「コピー」で控えた文字を最初から最後までそのまま貼り付けてください。'}
 };
+renderBackup();
+// localStorage が空で予備に記録が残っていれば自動で戻す
+idbGet().then(list=>{if(Array.isArray(list)&&list.length){const n=mergeIn(list);if(n){saveLocal();render();flash(n+'件 自動復旧')}}else if(state.entries.length){idbPut(state.entries)}});
 if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(()=>{})}
 </script>
 
