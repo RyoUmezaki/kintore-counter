@@ -7,8 +7,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="筋トレ">
-<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-title" content="筋トレカウンター">
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon-192.png">
 <title>筋トレカウンター</title>
@@ -146,6 +146,11 @@ input:focus-visible,button:focus-visible{outline:3px solid var(--gold);outline-o
 .bar .c{text-align:right;font-family:var(--f-label);font-variant-numeric:tabular-nums}
 
 .foot{display:flex;flex-direction:column;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--mute)}
+.bk{gap:12px}
+.bk summary{cursor:pointer;list-style:none;font-weight:700;font-size:14px;color:var(--mute);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.bk summary::-webkit-details-marker{display:none}
+.bk summary span{font-size:12px;font-weight:400}
+.bk[open] summary{color:var(--gold)}
 .note{margin:0;font-size:13px;color:var(--mute)}
 .bk-alert{margin:0;padding:10px 12px;background:var(--gold);color:var(--iron);font-weight:900;font-size:13px}
 .bk-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
@@ -261,21 +266,20 @@ input:focus-visible,button:focus-visible{outline:3px solid var(--gold);outline-o
     <div class="bars" id="mBars"></div>
   </section>
 
-  <section class="card" id="backup" aria-labelledby="bkH">
-    <div class="sec-h"><h2 id="bkH">BACK <span>UP</span></h2><span class="jp">バックアップ・復元</span></div>
-    <p class="note">記録はこのスマホの中だけに保存されます。ブラウザの「Cookieとサイトデータ」を削除すると記録も消えるので、ときどきコピーしてメモアプリやLINEのKeepに貼っておいてください。</p>
+  <details class="card bk" id="backup">
+    <summary>バックアップ・復元<span>機種変更のときだけ使います</span></summary>
+    <p class="note">記録はこのスマホ本体に保存されます。機種変更の前に「コピー」を押し、新しいスマホで貼り付けて「復元」を押すと引き継げます。</p>
     <p class="bk-alert" id="bkAlert" hidden></p>
     <div class="bk-row">
       <button class="bk-btn" id="copyBtn" type="button">コピー</button>
       <span class="bk-last" id="bkLast"></span>
     </div>
-    <textarea id="bkText" rows="4" placeholder="ここにバックアップの文字を貼り付けて「復元」を押す" spellcheck="false" autocomplete="off"></textarea>
+    <textarea id="bkText" rows="3" placeholder="ここにコピーした文字を貼り付けて「復元」を押す" spellcheck="false" autocomplete="off"></textarea>
     <div class="bk-row">
       <button class="bk-btn ghost" id="restoreBtn" type="button">復元</button>
-      <span class="bk-last">今の記録は残したまま、足りない分だけ追加します</span>
     </div>
     <p class="err" id="backupErr" aria-live="polite"></p>
-  </section>
+  </details>
 </div>
 <div class="toast" id="toast" hidden>RECORDED</div>
 
@@ -437,7 +441,7 @@ function renderBackup(){
   const lb=lastBackup();
   const days=lb?Math.floor((TODAY-parse(lb))/864e5):null;
   $('bkLast').textContent=lb?`前回のコピー：${lb.replace(/-/g,'/')}（${days===0?'今日':days+'日前'}）`:'まだコピーしていません';
-  const need=state.entries.length>0&&(days===null||days>=7);
+  const need=false;
   $('bkAlert').hidden=!need;
   $('bkAlert').textContent=days===null?'まだバックアップがありません。「コピー」を押してメモに貼っておきましょう。':`前回のバックアップから${days}日たちました。「コピー」を押して控えを更新しましょう。`;
 }
